@@ -1,0 +1,112 @@
+# TestForger Image Push — reusable GitHub Action (build a custom image and push it from CI).
+#
+# BYO image (client build + push). The runner's docker builds the image, then `testforger image push`
+# uploads it to a presigned GCS temp location and TestForger copies it into Artifact Registry —
+# TestForger itself never builds. It just runs `testforger image publish` (build + push).
+#
+# ⚠ Different surface from ingest (the `push` action): image push uses the Public API
+#    (`api.{APEX}`, Bearer), not the ingest domain (`ingest.{APEX}`).
+#
+# Images change rarely (iterate on tests via source). Keep this in a separate workflow from the
+#   per-commit source push, and run it on Dockerfile changes / manually.
+#
+# Usage:
+#   - uses: testforger-dev/actions/image-push@v0
+#     with:
+#       api-key: ${{ secrets.TESTFORGER_API_KEY }}
+#       app: my-app
+#       tag: my-app:ci-${{ github.sha }}
+name: 'TestForger Image Push'
+description: 'Build and push a custom image to TestForger from CI (BYO client-build-push)'
+author: 'TestForger'
+branding:
+  icon: 'package'
+  color: 'orange'
+
+inputs:
+  api-key:
+    description: 'TestForger API key (create one in Org Settings > API keys). Store it as a repo secret.'
+    required: true
+  app:
+    description: 'Target app slug (image push requires it).'
+    required: true
+  tag:
+    description: 'Image tag to build and push (e.g. my-app:ci-${{ github.sha }}).'
+    required: true
+  dockerfile:
+    description: 'Path to the Dockerfile (-f). Defaults to ./Dockerfile.'
+    required: false
+    default: ''
+  context:
+    description: 'Build context directory.'
+    required: false
+    default: '.'
+  api-url:
+    description: 'Public API base URL (image push is a Public API op, not ingest).'
+    required: false
+    default: 'https://api.testforger.com'
+  version:
+    description: 'testforger CLI version to install (a release tag, or "latest").'
+    required: false
+    default: 'latest'
+  working-directory:
+    description: 'Directory to run from.'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install testforger CLI
+      shell: bash
+      env:
+        TESTFORGER_VERSION: ${{ inputs.version }}
+        GH_API_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        REPO="testforger-dev/cli"
+
+        os="$(uname -s)"; arch="$(uname -m)"
+        case "${os}-${arch}" in
+          Linux-x86_64)   target="linux-x64" ;;
+          Linux-aarch64)  target="linux-arm64" ;;
+          Darwin-x86_64)  target="darwin-x64" ;;
+          Darwin-arm64)   target="darwin-arm64" ;;
+          *) echo "::error::Unsupported runner platform ${os}-${arch}. Use a Linux or macOS runner." ; exit 1 ;;
+        esac
+
+        version="${TESTFORGER_VERSION}"
+        if [ "${version}" = "latest" ]; then
+          version="$(curl -fsSL -H "Authorization: Bearer ${GH_API_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/releases/latest" \
+            | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"tag_name": *"\(.*\)"/\1/')"
+          if [ -z "${version}" ]; then
+            echo "::error::Could not resolve the latest testforger release. Pin an explicit version:." ; exit 1
+          fi
+        fi
+
+        dest="${RUNNER_TEMP}/testforger-bin"
+        mkdir -p "${dest}"
+        url="https://github.com/${REPO}/releases/download/${version}/testforger-${target}"
+        echo "Installing testforger ${version} (${target}) from ${url}"
+        curl -fsSL "${url}" -o "${dest}/testforger"
+        chmod +x "${dest}/testforger"
+        echo "${dest}" >> "${GITHUB_PATH}"
+
+    - name: Build & push image
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TESTFORGER_API_KEY: ${{ inputs.api-key }}
+        TESTFORGER_API_URL: ${{ inputs.api-url }}
+        INPUT_APP: ${{ inputs.app }}
+        INPUT_TAG: ${{ inputs.tag }}
+        INPUT_DOCKERFILE: ${{ inputs.dockerfile }}
+        INPUT_CONTEXT: ${{ inputs.context }}
+      run: |
+        set -euo pipefail
+        args=(image publish --app "${INPUT_APP}" --tag "${INPUT_TAG}")
+        if [ -n "${INPUT_DOCKERFILE}" ]; then args+=(--file "${INPUT_DOCKERFILE}"); fi
+        if [ -n "${INPUT_CONTEXT}" ]; then args+=(--context "${INPUT_CONTEXT}"); fi
+        echo "Running: testforger ${args[*]}"
+        testforger "${args[@]}"

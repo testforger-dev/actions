@@ -1,0 +1,108 @@
+# TestForger Push — reusable GitHub Action (send `.testforger/` to TestForger from CI).
+#
+# User-facing wrapper for the "no GitHub App / webhook; push ingestion via CI (Action / CLI)"
+# design (docs/architecture/git-sync.md). It just runs `testforger push`.
+# Direction: user = push / server = ingest (endpoint /v1/ingest, docs/architecture/ingest-protocol.md).
+#
+# It downloads and runs the `testforger` single-binary (Bun is embedded — no Bun/Node on the runner).
+# The binary is published as a release asset in the public distribution repo testforger-dev/cli,
+#   named `testforger-<target>` (e.g. testforger-linux-x64), matching the 5 targets produced by
+#   packages/cli's build:binary:all. Publishing is handled by the monorepo's cli-release.yaml.
+#
+# Usage (this is all a user adds to their repo):
+#   - uses: testforger-dev/actions/push@v0
+#     with:
+#       api-key: ${{ secrets.TESTFORGER_API_KEY }}
+#       app: my-app
+name: 'TestForger Push'
+description: 'Send .testforger/ test definitions to TestForger from CI'
+author: 'TestForger'
+branding:
+  icon: 'upload-cloud'
+  color: 'orange'
+
+inputs:
+  api-key:
+    description: 'TestForger API key (create one in Org Settings > API keys). Store it as a repo secret.'
+    required: true
+  app:
+    description: 'Target app slug. If omitted, the backend resolves the app from the git remote.'
+    required: false
+    default: ''
+  api-url:
+    description: 'Ingest ingress base URL (the git ingest domain).'
+    required: false
+    default: 'https://ingest.testforger.com'
+  ref:
+    description: 'Branch/ref to record. Defaults to the pushed branch (GITHUB_REF_NAME).'
+    required: false
+    default: ''
+  version:
+    description: 'testforger CLI version to install (a release tag, or "latest").'
+    required: false
+    default: 'latest'
+  working-directory:
+    description: 'Directory that contains the .testforger/ folder.'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install testforger CLI
+      shell: bash
+      env:
+        TESTFORGER_VERSION: ${{ inputs.version }}
+        # Authenticate the release API call to avoid rate limits (the default token is enough).
+        GH_API_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        REPO="testforger-dev/cli"
+
+        # 1. Map the runner platform to a build target name (matches packages/cli's outfile names).
+        os="$(uname -s)"; arch="$(uname -m)"
+        case "${os}-${arch}" in
+          Linux-x86_64)   target="linux-x64" ;;
+          Linux-aarch64)  target="linux-arm64" ;;
+          Darwin-x86_64)  target="darwin-x64" ;;
+          Darwin-arm64)   target="darwin-arm64" ;;
+          *) echo "::error::Unsupported runner platform ${os}-${arch}. Use a Linux or macOS runner." ; exit 1 ;;
+        esac
+
+        # 2. Resolve the version ("latest" -> the newest release tag).
+        version="${TESTFORGER_VERSION}"
+        if [ "${version}" = "latest" ]; then
+          version="$(curl -fsSL -H "Authorization: Bearer ${GH_API_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/releases/latest" \
+            | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"tag_name": *"\(.*\)"/\1/')"
+          if [ -z "${version}" ]; then
+            echo "::error::Could not resolve the latest testforger release. Pin an explicit version:." ; exit 1
+          fi
+        fi
+
+        # 3. Download the single-binary and put it on PATH.
+        dest="${RUNNER_TEMP}/testforger-bin"
+        mkdir -p "${dest}"
+        url="https://github.com/${REPO}/releases/download/${version}/testforger-${target}"
+        echo "Installing testforger ${version} (${target}) from ${url}"
+        curl -fsSL "${url}" -o "${dest}/testforger"
+        chmod +x "${dest}/testforger"
+        echo "${dest}" >> "${GITHUB_PATH}"
+
+    - name: Ingest
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TESTFORGER_API_KEY: ${{ inputs.api-key }}
+        TESTFORGER_API_URL: ${{ inputs.api-url }}
+        INPUT_APP: ${{ inputs.app }}
+        INPUT_REF: ${{ inputs.ref }}
+      run: |
+        set -euo pipefail
+        args=(push)
+        if [ -n "${INPUT_APP}" ]; then args+=(--app "${INPUT_APP}"); fi
+        # Default the ref to the CI branch name (a correct short name even on detached HEAD).
+        ref="${INPUT_REF:-${GITHUB_REF_NAME:-}}"
+        if [ -n "${ref}" ]; then args+=(--ref "${ref}"); fi
+        echo "Running: testforger ${args[*]}"
+        testforger "${args[@]}"
