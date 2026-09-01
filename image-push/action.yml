@@ -98,7 +98,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         TESTSPARROW_API_KEY: ${{ inputs.api-key }}
-        TESTSPARROW_API_URL: ${{ inputs.api-url }}
+        TESTSPARROW_HOST: ${{ inputs.api-url }}
         INPUT_APP: ${{ inputs.app }}
         INPUT_TAG: ${{ inputs.tag }}
         INPUT_DOCKERFILE: ${{ inputs.dockerfile }}
