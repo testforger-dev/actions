@@ -39,7 +39,7 @@ jobs:
 | `tag` | yes | — | Image tag to build and push. |
 | `dockerfile` | no | `./Dockerfile` | Path to the Dockerfile (`-f`). |
 | `context` | no | `.` | Build context directory. |
-| `api-url` | no | `https://api.testsparrow.com` | Public API base URL. |
+| `hostname` | no | `testsparrow.com` | Backend host (apex; scheme and the api./ingest. prefix are derived). A full URL is also accepted. |
 | `version` | no | `latest` | CLI version (a release tag, or `latest`). |
 | `working-directory` | no | `.` | Directory to run from. |
 

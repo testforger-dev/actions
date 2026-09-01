@@ -36,7 +36,7 @@ the repo secret `TESTSPARROW_API_KEY`.
 |---|---|---|---|
 | `api-key` | yes | — | TestSparrow API key (repo secret). |
 | `app` | no | — | Target app slug. Omit to let the backend resolve it from the git remote. |
-| `api-url` | no | `https://api.testsparrow.com` | Backend base URL. |
+| `hostname` | no | `testsparrow.com` | Backend host (apex; scheme and the api./ingest. prefix are derived). A full URL is also accepted. |
 | `ref` | no | pushed branch (`GITHUB_REF_NAME`) | Branch/ref to record. |
 | `version` | no | `latest` | CLI version (a release tag, or `latest`). |
 | `working-directory` | no | `.` | Directory that contains `.testsparrow/`. |

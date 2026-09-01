@@ -29,10 +29,10 @@ inputs:
     description: 'Target app slug. If omitted, the backend resolves the app from the git remote.'
     required: false
     default: ''
-  api-url:
-    description: 'Ingest ingress base URL (the git ingest domain).'
+  hostname:
+    description: 'Backend host — an apex like testsparrow.com (scheme and the api./ingest. surface prefix are derived automatically). A full URL is also accepted.'
     required: false
-    default: 'https://ingest.testsparrow.com'
+    default: 'testsparrow.com'
   ref:
     description: 'Branch/ref to record. Defaults to the pushed branch (GITHUB_REF_NAME).'
     required: false
@@ -94,7 +94,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         TESTSPARROW_API_KEY: ${{ inputs.api-key }}
-        TESTSPARROW_HOST: ${{ inputs.api-url }}
+        TESTSPARROW_HOST: ${{ inputs.hostname }}
         INPUT_APP: ${{ inputs.app }}
         INPUT_REF: ${{ inputs.ref }}
       run: |

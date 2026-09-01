@@ -41,10 +41,10 @@ inputs:
     description: 'Build context directory.'
     required: false
     default: '.'
-  api-url:
-    description: 'Public API base URL (image push is a Public API op, not ingest).'
+  hostname:
+    description: 'Backend host — an apex like testsparrow.com (scheme and the api./ingest. surface prefix are derived automatically). A full URL is also accepted.'
     required: false
-    default: 'https://api.testsparrow.com'
+    default: 'testsparrow.com'
   version:
     description: 'testsparrow CLI version to install (a release tag, or "latest").'
     required: false
@@ -98,7 +98,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         TESTSPARROW_API_KEY: ${{ inputs.api-key }}
-        TESTSPARROW_HOST: ${{ inputs.api-url }}
+        TESTSPARROW_HOST: ${{ inputs.hostname }}
         INPUT_APP: ${{ inputs.app }}
         INPUT_TAG: ${{ inputs.tag }}
         INPUT_DOCKERFILE: ${{ inputs.dockerfile }}
